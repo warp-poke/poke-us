@@ -30,7 +30,16 @@ class StateAgent @Inject()() extends Actor {
 
   def active(state: State): Receive = {
     case SetToken(token: Token) => context.become(active(State(Some(token), state.lastAlertDate)))
-    case SetLastAlertDate(date: LocalDateTime) => context.become(active(State(state.token, Some(date))))
+    case SetLastAlertDate(date: LocalDateTime) => {
+      val dateToSet = state.lastAlertDate match {
+        case None => date
+        case Some(currentDate) => {
+          if (date isAfter currentDate) date
+          else                          currentDate
+        }
+      }
+      context.become(active(State(state.token, Some(dateToSet))))
+    }
     case GetState => sender ! state
     case SetState(state: State) => context.become(active(state))
   }
