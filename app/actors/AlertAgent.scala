@@ -8,6 +8,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
+import play.api.libs.json._
 import play.api.libs.ws._
 import play.api.Logger
 
@@ -52,33 +53,27 @@ class AlertAgent @Inject() (
   def receive = {
     case Tick => stateAgent ! StateAgent.GetState
     case State(None, None) => Logger.error(TokenUndefined.toString)
-    case State(Some(token), None) => {
-      fetchAlert(
-        token,
-        LocalDateTime.now.minusMinutes(50000) // fetch huge period to start
-      )
-    }
-    case State(Some(token), Some(lastAlertDate)) => {
-      fetchAlert(token, lastAlertDate)
-    }
+    case State(Some(token), None) => fetchAlert(token, LocalDateTime.now.minusMinutes(50000))
+    case State(Some(token), Some(lastAlertDate)) => fetchAlert(token, lastAlertDate)
   }
 
   private def fetchAlert(token: Token, lastAlertDate: LocalDateTime) = {
-    warpClient.fetch(
-      token.token,
-      Query(
-        Selector("alert.http.status.owner"),
-        FetchRange(lastAlertDate, LocalDateTime.now)
-      )
-    ).map { gtsList =>
+    Logger.debug(s"Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with ${token.toString}.")
+    warpClient.exec(s"""
+      1 h 'duration' STORE
+      1535188676443422 'now' STORE
+      [ '${token.token}' '~alert.http.status' { 'owner_id' '561bf859-b1ae-41bd-bd89-3421fbad0697' } $$now $$duration ] FETCH
+      [ 0 1 ]
+      SUBLIST
+    """).map { gtsList =>
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
 
         val alertsToEmit = gts.points.filter(_.value == GTSBooleanValue(true)).map { alertPoint =>
           Alert(
-            ownerId = UUID.fromString(gts.labels("ownerId")),
+            ownerId = UUID.fromString(gts.labels("owner_id")),
             date = tsToLocalDateTime(alertPoint.ts.get),
-            message = "alert.http.status.owner" // to update with label value?
+            message = s"${gts.classname} - ${gts.labels.toString}" // to update with label value?
           )
         }.toList
 
@@ -87,9 +82,46 @@ class AlertAgent @Inject() (
     }
   }
 
-  private def pushAlerts(alerts: List[Alert]) = alerts.map(pushAlert(_))
+  case class SlackWebhookPayload(text: String)
+  implicit val slackWebhookPayloadWriter = Json.writes[SlackWebhookPayload]
 
-  private def pushAlert(alert: Alert) = ???
+  private def pushAlerts(alerts: List[Alert]): Unit = {
+    wsClient
+      .url("https://hooks.slack.com/services/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")
+      .withMethod("POST")
+      .withHttpHeaders("Content-Type" -> "application/json")
+      .put(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
+        s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}."
+      }.mkString("\n"))))
+      .map { response =>
+        if (response.status >= 200 && response.status <= 299) {
+          validateSent(alerts)
+        } else {
+          pushAlerts(alerts)
+        }
+      }
+    ()
+  }
+
+  private def pushAlert(alert: Alert): Unit = {
+    wsClient
+      .url("https://hooks.slack.com/services/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")
+      .withMethod("POST")
+      .withHttpHeaders("Content-Type" -> "application/json")
+      .put(Json.toJson(SlackWebhookPayload(s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}.")))
+      .map { response =>
+        if (response.status >= 200 && response.status <= 299) {
+          validateSent(alert)
+        } else {
+          pushAlert(alert)
+        }
+      }
+    ()
+  }
+
+  private def validateSent(alerts: List[Alert]) = ???
+
+  private def validateSent(alert: Alert) = ???
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
     LocalDateTime.ofInstant(

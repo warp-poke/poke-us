@@ -24,7 +24,7 @@ libraryDependencies ++= Seq(
   "de.mkammerer" % "argon2-jvm" % "2.3",
   "net.cakesolutions" %% "scala-kafka-client-akka" % "1.0.0",
   "org.scalatestplus.play" %% "scalatestplus-play" % "3.1.2" % Test,
-  "com.clevercloud" %% "akka-warp10-scala-client" % "2.5.12_10.1.1_1.0.2",
+  "com.clevercloud" %% "akka-warp10-scala-client" % "0.1.0-SNAPSHOT",
   "name.delafargue" %% "anorm-pg-entity" % "0.1.0-SNAPSHOT",
 )
 
