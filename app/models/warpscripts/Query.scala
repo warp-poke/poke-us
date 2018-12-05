@@ -81,7 +81,7 @@ object query_module {
     def reduce(labelsOption: Option[String]): String = {
       labelsOption.map { labels =>
         s"""
-        [ SWAP ${labels} reducer.count ] REDUCE
+         [ SWAP ${labels} reducer.count ] REDUCE
         """
       }.getOrElse("")
     }
