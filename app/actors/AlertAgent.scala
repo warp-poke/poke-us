@@ -74,7 +74,8 @@ class AlertAgent @Inject() (
       selector = "~alert.http.status{}",
       duration = "15 m",
       value = "false",
-      op = "eq"
+      op = "eq",
+      labels = Some("[ 'zone' ]")
     )).map { gtsList =>
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
