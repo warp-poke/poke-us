@@ -5,6 +5,7 @@ import java.util.UUID
 import javax.inject._
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
@@ -30,7 +31,9 @@ object AlertAgent {
   case object Tick
 
   sealed trait AlertAgentError
-  case object TokenUndefined extends AlertAgentError
+  case object TokensUndefined extends AlertAgentError
+  case object ReadTokenUndefined extends AlertAgentError
+  case object WriteTokenUndefined extends AlertAgentError
 }
 
 class AlertAgent @Inject() (
@@ -53,15 +56,21 @@ class AlertAgent @Inject() (
 
   def receive = {
     case Tick => stateAgent ! StateAgent.GetState
-    case State(None, None) => Logger.error(TokenUndefined.toString)
-    case State(Some(token), None) => fetchAlert(token, LocalDateTime.now.minusMinutes(50000))
-    case State(Some(token), Some(lastAlertDate)) => fetchAlert(token, lastAlertDate)
+    case State(None, None, None) => Logger.error(TokensUndefined.toString)
+    case State(Some(readToken), None, None) => Logger.error(WriteTokenUndefined.toString)
+    case State(None, Some(writeToken), None) => Logger.error(ReadTokenUndefined.toString)
+    case State(Some(readToken), Some(writeToken), None) => processAlerts(readToken, writeToken, LocalDateTime.now.minusMinutes(50000))
+    case State(Some(readToken), Some(writeToken), Some(lastAlertDate)) => processAlerts(readToken, writeToken, lastAlertDate)
   }
 
-  private def fetchAlert(token: Token, lastAlertDate: LocalDateTime) = {
-    Logger.debug(s"Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with ${token.toString}.")
+  private def processAlerts(readToken: Token, writeToken: Token, lastAlertDate: LocalDateTime) = {
+    Logger.debug(s"""
+      Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with
+        - readToken: ${readToken.toString};
+        - writeToken: ${writeToken.toString}.
+    """)
     warpClient.exec(Checks.last(
-      token = token.token,
+      token = readToken.token,
       selector = "~alert.http.status{}",
       duration = "15 m",
       value = "false",
@@ -74,11 +83,14 @@ class AlertAgent @Inject() (
           Alert(
             ownerId = UUID.fromString(gts.labels("owner_id")),
             date = tsToLocalDateTime(alertPoint.ts.get),
-            message = s"${gts.classname} - ${gts.labels.toString}" // to update with label value?
+            message = s"${gts.classname} - ${gts.labels.toString}"
           )
         }.toList
 
-        pushAlerts(alertsToEmit)
+        pushAlerts(alertsToEmit).map { _ match {
+          case Left(e) => Logger.error(e); pushAlerts(alertsToEmit)
+          case Right(_) => markAsNotified(writeToken, gts) ; Logger.info("Marked as notified.")
+        }}
       }
     }
   }
@@ -86,43 +98,20 @@ class AlertAgent @Inject() (
   case class SlackWebhookPayload(text: String)
   implicit val slackWebhookPayloadWriter = Json.writes[SlackWebhookPayload]
 
-  private def pushAlerts(alerts: List[Alert]): Unit = {
+  private def pushAlerts(alerts: List[Alert]): Future[Either[String, Unit]] = {
     wsClient
       .url("https://hooks.slack.com/services/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")
-      .withMethod("POST")
       .withHttpHeaders("Content-Type" -> "application/json")
-      .put(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
+      .post(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
         s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}."
       }.mkString("\n"))))
       .map { response =>
-        if (response.status >= 200 && response.status <= 299) {
-          validateSent(alerts)
-        } else {
-          pushAlerts(alerts)
-        }
+        if (response.status >= 200 && response.status <= 299) Right(())
+        else                                                  Left(s"${response.status} - ${response.body}.")
       }
-    ()
   }
 
-  private def pushAlert(alert: Alert): Unit = {
-    wsClient
-      .url("https://hooks.slack.com/services/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")
-      .withMethod("POST")
-      .withHttpHeaders("Content-Type" -> "application/json")
-      .put(Json.toJson(SlackWebhookPayload(s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}.")))
-      .map { response =>
-        if (response.status >= 200 && response.status <= 299) {
-          validateSent(alert)
-        } else {
-          pushAlert(alert)
-        }
-      }
-    ()
-  }
-
-  private def validateSent(alerts: List[Alert]) = ???
-
-  private def validateSent(alert: Alert) = ???
+  private def markAsNotified(writeToken: Token, gts: GTS) = ???
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
     LocalDateTime.ofInstant(
