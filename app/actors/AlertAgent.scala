@@ -80,7 +80,7 @@ class AlertAgent @Inject() (
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
 
-        val alertsToEmit = gts.points.filter(_.value == GTSBooleanValue(false)).map { alertPoint =>
+        val alertsToEmit = gts.points.map { alertPoint =>
           Alert(
             ownerId = UUID.fromString(gts.labels("owner_id")),
             date = tsToLocalDateTime(alertPoint.ts.get),
