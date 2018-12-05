@@ -60,17 +60,17 @@ class AlertAgent @Inject() (
 
   private def fetchAlert(token: Token, lastAlertDate: LocalDateTime) = {
     Logger.debug(s"Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with ${token.toString}.")
-    warpClient.exec(LastState.lastState(
+    warpClient.exec(Checks.last(
       token = token.token,
       selector = "~alert.http.status{}",
       duration = "15 m",
-      alert = "false",
+      value = "false",
       op = "eq"
     )).map { gtsList =>
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
 
-        val alertsToEmit = gts.points.filter(_.value == GTSBooleanValue(true)).map { alertPoint =>
+        val alertsToEmit = gts.points.filter(_.value == GTSBooleanValue(false)).map { alertPoint =>
           Alert(
             ownerId = UUID.fromString(gts.labels("owner_id")),
             date = tsToLocalDateTime(alertPoint.ts.get),
