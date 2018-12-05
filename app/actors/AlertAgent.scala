@@ -23,6 +23,7 @@ import com.clevercloud.warp10client.models.gts_module._
 import _root_.models.Alert
 import _root_.models.Token
 import _root_.models.State
+import _root_.models.warpscripts._
 import utils.Config
 
 object AlertAgent {
@@ -59,13 +60,13 @@ class AlertAgent @Inject() (
 
   private def fetchAlert(token: Token, lastAlertDate: LocalDateTime) = {
     Logger.debug(s"Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with ${token.toString}.")
-    warpClient.exec(s"""
-      1 h 'duration' STORE
-      1535188676443422 'now' STORE
-      [ '${token.token}' '~alert.http.status' { 'owner_id' '561bf859-b1ae-41bd-bd89-3421fbad0697' } $$now $$duration ] FETCH
-      [ 0 1 ]
-      SUBLIST
-    """).map { gtsList =>
+    warpClient.exec(LastState.lastState(
+      token = token.token,
+      selector = "~alert.http.status{}",
+      duration = "15 m",
+      alert = "false",
+      op = "eq"
+    )).map { gtsList =>
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
 
