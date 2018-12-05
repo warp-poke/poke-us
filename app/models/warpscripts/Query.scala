@@ -23,10 +23,26 @@ object query_module {
       """
     }
 
+
+
+    def mapperLast(op: String, value: String): String = {
+      s"""
+        [
+          SWAP
+          []
+          ${value}
+          'mapper.' '${op}' + EVAL
+        ] FILTER
+        NONEMPTY
+
+        [ SWAP mapper.last MAXLONG 0 -1 ] MAP
+      """
+    }
+
     def reduce(labelsOption: Option[String]): String = {
       labelsOption.map { labels =>
         s"""
-        [ SWAP ${labels} reducer.sum ] REDUCE
+        [ SWAP ${labels} reducer.count ] REDUCE
         """
       }.getOrElse("")
     }
@@ -42,6 +58,63 @@ object query_module {
         [ SWAP mapper.delta ${range} 0 0 ] MAP
       """
     }
+
+    def notQuiesce: String = {
+      s"""
+        []
+        <%
+          DUP ATTRIBUTES            
+          <%
+            'quiesce' GET DUP
+            <%
+              ISNULL
+            %>
+            <%
+              DROP
+              false
+            %>
+            <%
+              'true' ==
+            %>
+            IFTE
+          %>
+          <%
+            DROP
+          %>
+          <%
+            +
+          %>
+          IFTE
+        %>
+        FOREACH
+        NONEMPTY
+      """
+    }
+
+    def checkLastNotify: String =  {
+      s"""
+        []
+        SWAP
+        <%
+          DUP ATTRIBUTES
+          
+          <%
+            'lastNotify' GET DUP ISNULL
+          %>
+          <%
+            DROP
+            +
+          %>
+          <%
+            [ SWAP TOLONG  $$now ] 1 ->LIST CLIP +
+          %>
+          IFTE
+        %>
+        FOREACH
+        NONEMPTY
+      """
+    }
+
     def footer: String = {
       s"""
         DUP TYPEOF <% 'GTS' == %> <% [ SWAP ] %> IFT
