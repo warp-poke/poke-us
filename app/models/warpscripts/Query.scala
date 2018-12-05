@@ -23,6 +23,14 @@ object query_module {
       """
     }
 
+    def reduce(labelsOption: Option[String]): String = {
+      labelsOption.map { labels =>
+        s"""
+        [ SWAP ${labels} reducer.sum ] REDUCE
+        """
+      }.getOrElse("")
+    }
+
     def delta(range: Integer): String = {
       s"""
         [ SWAP mapper.tolong 0 0 0 ] MAP
