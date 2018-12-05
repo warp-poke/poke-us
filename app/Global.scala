@@ -31,19 +31,33 @@ class Global @Inject() (
   configuration: Config,
   wsClient: WSClient
 )(implicit ec: ExecutionContext) {
-  Logger.info(s"START POKE-US")
+  Logger.info(s"STARTING POKE-US...")
+  // refresh read token each `fetchReachTokenInterval.minutes`
   actorSystem.scheduler.schedule(1.seconds, configuration.pokeUs.fetchReadTokenInterval.minutes) {
     wsClient
       .url(configuration.pokeAPI.readTokenEndpoint)
       .addHttpHeaders("Accept" -> "application/json")
       .addHttpHeaders("Authorization" -> configuration.pokeAPI.internalAuthToken)
       .get
-      .map(response => stateAgent ! StateAgent.SetToken((response.json).as[Token]))
+      .map(response => stateAgent ! StateAgent.SetReadToken((response.json).as[Token]))
   }
 
+  // refresh write token each `fetchWriteTokenInterval.minutes`
+  actorSystem.scheduler.schedule(1.seconds, configuration.pokeUs.fetchWriteTokenInterval.minutes) {
+    wsClient
+      .url(configuration.pokeAPI.readTokenEndpoint)
+      .addHttpHeaders("Accept" -> "application/json")
+      .addHttpHeaders("Authorization" -> configuration.pokeAPI.internalAuthToken)
+      .get
+      .map(response => stateAgent ! StateAgent.SetWriteToken((response.json).as[Token]))
+  }
+
+  // fetch alerts and manage them each `fetchAlertsInterval.seconds`
   actorSystem.scheduler.schedule(4.seconds, configuration.pokeUs.fetchAlertsInterval.seconds) {
     alertAgent ! Tick
   }
+
+  Logger.info(s"STARTED.")
 }
 
 class GlobalModule extends AbstractModule with AkkaGuiceSupport {

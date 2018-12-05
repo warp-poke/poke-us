@@ -3,6 +3,7 @@ package models
 import java.time.LocalDateTime
 
 case class State(
-  token: Option[Token],
+  readToken: Option[Token],
+  writeToken: Option[Token],
   lastAlertDate: Option[LocalDateTime]
 )

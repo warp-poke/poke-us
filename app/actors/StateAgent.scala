@@ -17,7 +17,8 @@ import models.Token
 
 object StateAgent {
   sealed trait StateAgentMessage
-  case class SetToken(token: Token) extends StateAgentMessage
+  case class SetReadToken(readToken: Token) extends StateAgentMessage
+  case class SetWriteToken(writeToken: Token) extends StateAgentMessage
   case class SetLastAlertDate(date: LocalDateTime) extends StateAgentMessage
   case object GetState extends StateAgentMessage
   case class SetState(state: State) extends StateAgentMessage
@@ -26,10 +27,11 @@ object StateAgent {
 class StateAgent @Inject()() extends Actor {
   import StateAgent._
 
-  def receive = active(State(None, None))
+  def receive = active(State(None, None, None))
 
   def active(state: State): Receive = {
-    case SetToken(token: Token) => context.become(active(State(Some(token), state.lastAlertDate)))
+    case SetReadToken(readToken: Token) => context.become(active(State(Some(readToken), state.writeToken, state.lastAlertDate)))
+    case SetWriteToken(writeToken: Token) => context.become(active(State(state.readToken, Some(writeToken), state.lastAlertDate)))
     case SetLastAlertDate(date: LocalDateTime) => {
       val dateToSet = state.lastAlertDate match {
         case None => date
@@ -38,7 +40,7 @@ class StateAgent @Inject()() extends Actor {
           else                          currentDate
         }
       }
-      context.become(active(State(state.token, Some(dateToSet))))
+      context.become(active(State(state.readToken, state.writeToken, Some(dateToSet))))
     }
     case GetState => sender ! state
     case SetState(state: State) => context.become(active(state))

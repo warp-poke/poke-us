@@ -12,11 +12,13 @@ case class Warp10Config(
 
 case class PokeAPIConfig(
   readTokenEndpoint: String,
+  writeTokenEndpoint: String,
   internalAuthToken: String
 )
 
 case class PokeUsConfig(
   fetchReadTokenInterval: Int,
+  fetchWriteTokenInterval: Int,
   fetchAlertsInterval: Int
 )
 
@@ -29,11 +31,13 @@ class Config @Inject() (val configuration: Configuration) {
 
   val pokeAPI = PokeAPIConfig(
     readTokenEndpoint = getString("pokeapi.readTokenEndpoint"),
+    writeTokenEndpoint = getString("pokeapi.writeTokenEndpoint"),
     internalAuthToken = getString("pokeapi.internalAuthToken")
   )
 
   val pokeUs = PokeUsConfig(
     fetchReadTokenInterval = getInt("pokeus.fetchReadTokenInterval"),
+    fetchWriteTokenInterval = getInt("pokeus.fetchWriteTokenInterval"),
     fetchAlertsInterval = getInt("pokeus.fetchAlertsInterval")
   )
 
