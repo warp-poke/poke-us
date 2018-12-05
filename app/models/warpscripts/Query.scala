@@ -2,6 +2,47 @@ package models.warpscripts
 
 object query_module {
   case class Query(token: String, selector: String, duration: String) {
+
+    def markAsNotified: String = {
+      s"""
+        NOW 'now' STORE
+        [ '${token}' '${selector}' PARSESELECTOR ] FIND
+        {
+          'lastNotify'
+          $$now TOSTRING
+        }
+        SETATTRIBUTES
+        
+        ${token} META
+      """
+    }
+
+    def markAsQuiesce: String = {
+      s"""
+        [ '${token}' '${selector}' PARSESELECTOR ] FIND
+        {
+          'quiesce'
+          'true
+        }
+        SETATTRIBUTES
+        
+        ${token} META
+      """
+    }
+
+    def markAsUnQuiesce: String = {
+      s"""
+        [ '${token}' '${selector}' PARSESELECTOR ] FIND
+        {
+          'quiesce'
+          'true
+        }
+        SETATTRIBUTES
+        
+        ${token} META
+      """
+    }
+
     def fetch: String = {
       s"""
         1535188676443422 'now' STORE
@@ -22,8 +63,6 @@ object query_module {
         [ SWAP mapper.last MAXLONG 0 -1 ] MAP
       """
     }
-
-
 
     def mapperLast(op: String, value: String): String = {
       s"""
