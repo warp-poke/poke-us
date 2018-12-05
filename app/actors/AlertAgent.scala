@@ -6,7 +6,7 @@ import javax.inject._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 import play.api.libs.json._
@@ -37,7 +37,7 @@ object AlertAgent {
 }
 
 class AlertAgent @Inject() (
-  system: ActorSystem,
+  actorSystem: ActorSystem,
   @Named("stateAgent") stateAgent: ActorRef,
   configuration: Config,
   implicit val ec: ExecutionContext,
@@ -45,14 +45,14 @@ class AlertAgent @Inject() (
 ) extends Actor {
   import AlertAgent._
 
-  implicit val executionContext = system.dispatchers.lookup("alertAgent")
+  implicit val executionContext = actorSystem.dispatchers.lookup("alertAgent")
   implicit val actorMaterializer = ActorMaterializer()
   implicit val warpConfiguration = WarpConfiguration("https://" + configuration.warp10.host)
   val warpClient = WarpClient(
     configuration.warp10.host,
     configuration.warp10.port,
     "https"
-  )(warpConfiguration, system, actorMaterializer)
+  )(warpConfiguration, actorSystem, actorMaterializer)
 
   def receive = {
     case Tick => stateAgent ! StateAgent.GetState
@@ -88,10 +88,16 @@ class AlertAgent @Inject() (
           )
         }.toList
 
-        pushAlerts(alertsToEmit).map { _ match {
-          case Left(e) => Logger.error(e); pushAlerts(alertsToEmit)
-          case Right(_) => markAsNotified(writeToken, gts) ; Logger.info("Marked as notified.")
-        }}
+        pushAlerts(alertsToEmit).map { response =>
+          if (response.status >= 200 && response.status <= 299) {
+            markAsNotified(writeToken, gts) ; Logger.info("Marked as notified.")
+          } else {
+            Logger.error(s"${response.status.toString} - ${response.body.toString}. Retrying in 1s...")
+            actorSystem.scheduler.scheduleOnce(1 seconds) {
+              pushAlerts(alertsToEmit)
+            }
+          }
+        }
       }
     }
   }
@@ -99,17 +105,13 @@ class AlertAgent @Inject() (
   case class SlackWebhookPayload(text: String)
   implicit val slackWebhookPayloadWriter = Json.writes[SlackWebhookPayload]
 
-  private def pushAlerts(alerts: List[Alert]): Future[Either[String, Unit]] = {
+  private def pushAlerts(alerts: List[Alert]): Future[WSResponse] = {
     wsClient
       .url("https://hooks.slack.com/services/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")
       .withHttpHeaders("Content-Type" -> "application/json")
       .post(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
         s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}."
       }.mkString("\n"))))
-      .map { response =>
-        if (response.status >= 200 && response.status <= 299) Right(())
-        else                                                  Left(s"${response.status} - ${response.body}.")
-      }
   }
 
   private def markAsNotified(writeToken: Token, gts: GTS) = ???
