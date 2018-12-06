@@ -69,14 +69,26 @@ class AlertAgent @Inject() (
         - readToken: ${readToken.toString};
         - writeToken: ${writeToken.toString}.
     """)
-    warpClient.exec(Checks.last(
-      token = readToken.token,
-      selector = "~alert.http.status{}",
-      duration = "15 m",
-      value = "false",
-      op = "eq",
-      labels = Some("[ 'zone' ]")
-    )).map { gtsList =>
+
+    warpClient.exec(
+      List(
+        Checks.last(
+          token = readToken.token,
+          selector = "~alert.http.status{}",
+          duration = "15 m",
+          value = "false",
+          op = "eq",
+          labels = Some("[ 'zone' ]")),
+        Checks.deltaMapper(
+          token = readToken.token,
+          selector = "~alert.http.status{}",
+          duration = "15 m",
+          range = 5,
+          value = "2",
+          op = "ge",
+          labels = Some("[ 'zone' ]"))
+      ).mkString("")
+    ).map { gtsList =>
       gtsList.map { gts =>
         stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
 
