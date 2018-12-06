@@ -3,9 +3,15 @@ package models.warpscripts
 object query_module {
   case class Query(token: String, selector: String, duration: String) {
 
+    def setLastEvalTime(String timestamp): String {
+      s"""
+      ${timestamp} 'now' STORE
+      """
+    }
+
     def markAsNotified: String = {
       s"""
-        NOW 'now' STORE
+        NOW 'now' CSTORE
         [ '${token}' '${selector}' PARSESELECTOR ] FIND
         {
           'lastNotify'
@@ -45,7 +51,7 @@ object query_module {
 
     def fetch: String = {
       s"""
-        1535188676443422 'now' STORE
+        1535188676443422 'now' CSTORE
         [ '${token}' '${selector}' PARSESELECTOR $$now ${duration} ] FETCH
       """
     }
@@ -71,7 +77,8 @@ object query_module {
           []
           ${value}
           'mapper.' '${op}' + EVAL
-        ] FILTER
+          0 0 0
+        ] MAP
         NONEMPTY
 
         [ SWAP mapper.last MAXLONG 0 -1 ] MAP
@@ -81,7 +88,8 @@ object query_module {
     def reduce(labelsOption: Option[String]): String = {
       labelsOption.map { labels =>
         s"""
-         [ SWAP ${labels} reducer.count ] REDUCE
+          [ SWAP ${labels} reducer.count ] REDUCE
+          [ SWAP mapper.last MAXLONG 0 -1 ] MAP
         """
       }.getOrElse("")
     }
