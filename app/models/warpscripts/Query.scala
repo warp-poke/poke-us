@@ -51,7 +51,7 @@ object query_module {
 
     def fetch: String = {
       s"""
-        1535188676443422 'now' CSTORE
+        NOW 'now' CSTORE
         [ '${token}' '${selector}' PARSESELECTOR $$now ${duration} ] FETCH
       """
     }
