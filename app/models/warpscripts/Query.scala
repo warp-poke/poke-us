@@ -3,9 +3,9 @@ package models.warpscripts
 object query_module {
   case class Query(token: String, selector: String, duration: String) {
 
-    def setLastEvalTime(String timestamp): String {
+    def setLastEvalTime(timestamp: String): String = {
       s"""
-      ${timestamp} 'now' STORE
+        ${timestamp} 'now' STORE
       """
     }
 
