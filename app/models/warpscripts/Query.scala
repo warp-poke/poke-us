@@ -18,7 +18,7 @@ object query_module {
           $$now TOSTRING
         }
         SETATTRIBUTES
-        
+
         ${token} META
       """
     }
@@ -31,7 +31,7 @@ object query_module {
           'true
         }
         SETATTRIBUTES
-        
+
         ${token} META
       """
     }
@@ -44,7 +44,7 @@ object query_module {
           'true
         }
         SETATTRIBUTES
-        
+
         ${token} META
       """
     }
@@ -110,7 +110,7 @@ object query_module {
       s"""
         []
         <%
-          DUP ATTRIBUTES            
+          DUP ATTRIBUTES
           <%
             'quiesce' GET DUP
             <%
@@ -144,7 +144,7 @@ object query_module {
         SWAP
         <%
           DUP ATTRIBUTES
-          
+
           <%
             'lastNotify' GET DUP ISNULL
           %>
