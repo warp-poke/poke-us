@@ -22,8 +22,9 @@ import com.clevercloud.warp10client.models._
 import com.clevercloud.warp10client.models.gts_module._
 
 import _root_.models.Alert
-import _root_.models.Token
+import _root_.models.Hook
 import _root_.models.State
+import _root_.models.Token
 import _root_.models.warpscripts._
 import utils.Config
 
@@ -100,13 +101,21 @@ class AlertAgent @Inject() (
           )
         }.toList
 
-        pushAlerts(alertsToEmit).map { response =>
-          if (response.status >= 200 && response.status <= 299) {
-            markAsNotified(writeToken, gts) ; Logger.info("Marked as notified.")
-          } else {
-            Logger.error(s"${response.status.toString} - ${response.body.toString}. Retrying in 1s...")
-            actorSystem.scheduler.scheduleOnce(1 seconds) {
-              pushAlerts(alertsToEmit)
+        alertsToEmit.groupBy(_.ownerId).map { case (ownerId, ownedAlerts) => {
+          wsClient
+        }}
+
+        pushAlerts(alertsToEmit).map { either =>
+          either match {
+            case Right(_) => {
+              markAsNotified(writeToken, gts)
+              Logger.info("Marked as notified.")
+            }
+            case Left(e) => {
+              Logger.error(s"${e}. Retrying in 1s...")
+              actorSystem.scheduler.scheduleOnce(1 seconds) {
+                pushAlerts(alertsToEmit)
+              }
             }
           }
         }
@@ -117,14 +126,20 @@ class AlertAgent @Inject() (
   case class SlackWebhookPayload(text: String)
   implicit val slackWebhookPayloadWriter = Json.writes[SlackWebhookPayload]
 
-  private def pushAlerts(alerts: List[Alert]): Future[WSResponse] = {
+  private def pushAlerts(alerts: List[Alert]): Future[Either[String, Unit]] = {
     wsClient
       .url("https://hooks.slack.com/services/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")
       .withHttpHeaders("Content-Type" -> "application/json")
       .post(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
         s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}."
       }.mkString("\n"))))
+      .map { response =>
+        if (response.status >= 200 && response.status <= 299) Right(())
+        else Left("${response.status.toString} - ${response.body.toString}")
+      }
   }
+
+  private def getUserHooks(ownerId: UUID): Future[List[Hook]] = ???
 
   private def markAsNotified(writeToken: Token, gts: GTS) = ???
 
