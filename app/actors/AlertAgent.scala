@@ -127,9 +127,9 @@ class AlertAgent @Inject() (
 
   def getUserHooks(ownerId: UUID): Future[Either[String, List[Hook]]] = {
     wsClient
-      .url(configuration.pokeAPI.baseURL + "/users/" + ownerId + "/hooks")
+      .url(configuration.pokeAPI.baseURL + "internal/users/" + ownerId + "/hooks")
       .addHttpHeaders("Accept" -> "application/json")
-      .addHttpHeaders("Authorization" -> configuration.pokeAPI.internalAuthToken) // missing user auth
+      .addHttpHeaders("Authorization" -> configuration.pokeAPI.internalAuthToken)
       .get
       .map { response =>
         if (response.status >= 200 && response.status <= 299) Right(response.json.as[List[Hook]])
