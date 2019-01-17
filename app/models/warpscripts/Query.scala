@@ -28,7 +28,7 @@ object query_module {
         [ '${token}' '${selector}' PARSESELECTOR ] FIND
         {
           'quiesce'
-          'true
+          'true'
         }
         SETATTRIBUTES
 
@@ -41,7 +41,7 @@ object query_module {
         [ '${token}' '${selector}' PARSESELECTOR ] FIND
         {
           'quiesce'
-          'true
+          'true'
         }
         SETATTRIBUTES
 
