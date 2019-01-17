@@ -11,6 +11,7 @@ case class Warp10Config(
 )
 
 case class PokeAPIConfig(
+  baseURL: String,
   readTokenEndpoint: String,
   writeTokenEndpoint: String,
   internalAuthToken: String
@@ -19,7 +20,8 @@ case class PokeAPIConfig(
 case class PokeUsConfig(
   fetchReadTokenInterval: Int,
   fetchWriteTokenInterval: Int,
-  fetchAlertsInterval: Int
+  fetchAlertsInterval: Int,
+  maxRetriesForHook: Int
 )
 
 @Singleton
@@ -30,6 +32,7 @@ class Config @Inject() (val configuration: Configuration) {
   )
 
   val pokeAPI = PokeAPIConfig(
+    baseURL = getString("pokeapi.baseURL"),
     readTokenEndpoint = getString("pokeapi.readTokenEndpoint"),
     writeTokenEndpoint = getString("pokeapi.writeTokenEndpoint"),
     internalAuthToken = getString("pokeapi.internalAuthToken")
@@ -38,7 +41,8 @@ class Config @Inject() (val configuration: Configuration) {
   val pokeUs = PokeUsConfig(
     fetchReadTokenInterval = getInt("pokeus.fetchReadTokenInterval"),
     fetchWriteTokenInterval = getInt("pokeus.fetchWriteTokenInterval"),
-    fetchAlertsInterval = getInt("pokeus.fetchAlertsInterval")
+    fetchAlertsInterval = getInt("pokeus.fetchAlertsInterval"),
+    maxRetriesForHook = getInt("pokeus.maxRetriesForHook")
   )
 
   private def getInt(path: String): Int = configuration.get[Int](path)

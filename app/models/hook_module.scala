@@ -2,8 +2,14 @@ package models
 
 import java.time.OffsetDateTime
 import java.util.UUID
+import javax.inject._
+
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
 import play.api.libs.json._
+import play.api.libs.ws._
 
 import anorm._
 import anorm.SqlParser._
@@ -37,15 +43,15 @@ object hook_kind {
 }
 
 case class HookInput(
-  user_id: UUID,
+  user_id: Hook.UserId,
   label: String,
   kind: hook_kind.HookKind,
   webhook: String
 )
 
 case class Hook(
-  hook_id: UUID,
-  user_id: UUID,
+  hook_id: Hook.HookId,
+  user_id: Hook.UserId,
   label: String,
   kind: hook_kind.HookKind,
   webhook: String
@@ -53,13 +59,14 @@ case class Hook(
   import hook_kind._
 
   val template = kind match {
-    case SLACK_WEBHOOK => """{"text": "$$BODY$$"}"""
+    case SLACK_WEBHOOK => """{"text": "@@BODY@@"}"""
     case _ => "Error: this kind's template is not defined."
   }
 }
 
 object Hook {
   type HookId = UUID
+  type UserId = UUID
 }
 
 object HookInstances {

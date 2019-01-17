@@ -23,6 +23,8 @@ import com.clevercloud.warp10client.models.gts_module._
 
 import _root_.models.Alert
 import _root_.models.Hook
+import _root_.models.Hook._
+import _root_.models.HookInstances._
 import _root_.models.State
 import _root_.models.Token
 import _root_.models.warpscripts._
@@ -71,18 +73,20 @@ class AlertAgent @Inject() (
         - writeToken: ${writeToken.toString}.
     """)
 
+    val selector = "~alert.http.status{}"
+
     warpClient.exec(
       List(
         Checks.last(
           token = readToken.token,
-          selector = "~alert.http.status{}",
+          selector = selector,
           duration = "15 m",
           value = "false",
           op = "eq",
           labels = Some("[ 'zone' ]")),
         Checks.deltaMapper(
           token = readToken.token,
-          selector = "~alert.http.status{}",
+          selector = selector,
           duration = "15 m",
           range = 5,
           value = "2",
@@ -91,8 +95,6 @@ class AlertAgent @Inject() (
       ).mkString("")
     ).map { gtsList =>
       gtsList.map { gts =>
-        stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
-
         val alertsToEmit = gts.points.map { alertPoint =>
           Alert(
             ownerId = UUID.fromString(gts.labels("owner_id")),
@@ -101,47 +103,64 @@ class AlertAgent @Inject() (
           )
         }.toList
 
+        // for each (ownerId, ownedAlerts), send alerts
         alertsToEmit.groupBy(_.ownerId).map { case (ownerId, ownedAlerts) => {
-          wsClient
-        }}
-
-        pushAlerts(alertsToEmit).map { either =>
-          either match {
-            case Right(_) => {
-              markAsNotified(writeToken, gts)
-              Logger.info("Marked as notified.")
-            }
-            case Left(e) => {
-              Logger.error(s"${e}. Retrying in 1s...")
-              actorSystem.scheduler.scheduleOnce(1 seconds) {
-                pushAlerts(alertsToEmit)
+          getUserHooks(ownerId).map { either =>
+            either match { 
+              case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
+              case Right(hooks) => hooks.map { hook =>
+                send(hook, ownedAlerts).map { either =>
+                  either match {
+                    case Right(_) => {
+                      markAsNotified(writeToken, selector) // TODO add return to check response and do the next line consequently
+                      stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
+                    }
+                  }
+                }
               }
             }
           }
-        }
+        }}
       }
     }
   }
 
-  case class SlackWebhookPayload(text: String)
-  implicit val slackWebhookPayloadWriter = Json.writes[SlackWebhookPayload]
-
-  private def pushAlerts(alerts: List[Alert]): Future[Either[String, Unit]] = {
+  def getUserHooks(ownerId: UUID): Future[Either[String, List[Hook]]] = {
     wsClient
-      .url("https://hooks.slack.com/services/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")
-      .withHttpHeaders("Content-Type" -> "application/json")
-      .post(Json.toJson(SlackWebhookPayload(alerts.map { alert =>
-        s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}."
-      }.mkString("\n"))))
+      .url(configuration.pokeAPI.baseURL + "/users/" + ownerId + "/hooks")
+      .addHttpHeaders("Accept" -> "application/json")
+      .addHttpHeaders("Authorization" -> configuration.pokeAPI.internalAuthToken) // missing user auth
+      .get
       .map { response =>
-        if (response.status >= 200 && response.status <= 299) Right(())
+        if (response.status >= 200 && response.status <= 299) Right(response.json.as[List[Hook]])
         else Left("${response.status.toString} - ${response.body.toString}")
       }
   }
 
-  private def getUserHooks(ownerId: UUID): Future[List[Hook]] = ???
+  def send(hook: Hook, alerts: List[Alert], nbRetries: Int = 0): Future[Either[String, Unit]] = {
+    if (nbRetries <= configuration.pokeUs.maxRetriesForHook) {
+      wsClient
+        .url(hook.webhook)
+        .withHttpHeaders("Content-Type" -> "application/json")
+        .post(Json.toJson(alerts.map { alert =>
+          hook.template.replace("@@BODY@@", s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}.")
+        }.mkString("\n")))
+        .map { response =>
+          if (response.status >= 200 && response.status <= 299) Right(())
+          else {
+            Logger.error(s"${response.status.toString} - ${response.body.toString}, let's retry in ${nbRetries * 1}s...")
+            actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds) {
+              send(hook, alerts, nbRetries + 1)
+            }
+            Left("Retrying")
+          }
+        }
+    } else Future.successful(Left(s"Stopping sending for ${hook.hook_id} after ${configuration.pokeUs.maxRetriesForHook.toString} retries."))
+  }
 
-  private def markAsNotified(writeToken: Token, gts: GTS) = ???
+  private def markAsNotified(writeToken: Token, selector: String) = {
+    warpClient.exec(_root_.models.warpscripts.query_module.Query(writeToken.token, selector, "").markAsNotified.toString)
+  }
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
     LocalDateTime.ofInstant(
