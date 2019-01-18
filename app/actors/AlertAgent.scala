@@ -108,16 +108,7 @@ class AlertAgent @Inject() (
           getUserHooks(ownerId).map { either =>
             either match { 
               case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
-              case Right(hooks) => hooks.map { hook =>
-                send(hook, ownedAlerts).map { either =>
-                  either match {
-                    case Right(_) => {
-                      markAsNotified(writeToken, selector) // TODO add return to check response and do the next line consequently
-                      stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get))
-                    }
-                  }
-                }
-              }
+              case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(selector, writeToken))
             }
           }
         }}
@@ -137,7 +128,7 @@ class AlertAgent @Inject() (
       }
   }
 
-  def send(hook: Hook, alerts: List[Alert], nbRetries: Int = 0): Future[Either[String, Unit]] = {
+  def send(hook: Hook, alerts: List[Alert], nbRetries: Int = 0)(selector: String, writeToken: Token): Any = {
     if (nbRetries <= configuration.pokeUs.maxRetriesForHook) {
       wsClient
         .url(hook.webhook)
@@ -146,20 +137,23 @@ class AlertAgent @Inject() (
           hook.template.replace("@@BODY@@", s"${alert.date.toString}: ${alert.message} to ${alert.ownerId.toString}.")
         }.mkString("\n")))
         .map { response =>
-          if (response.status >= 200 && response.status <= 299) Right(())
-          else {
+          if (response.status >= 200 && response.status <= 299) {
+            markAsNotified(writeToken, selector) // TODO add return to check response and retry if bad response
+          } else {
             Logger.error(s"${response.status.toString} - ${response.body.toString}, let's retry in ${nbRetries * 1}s...")
-            actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds) {
-              send(hook, alerts, nbRetries + 1)
-            }
-            Left("Retrying")
+            actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds)(send(hook, alerts, nbRetries + 1)(selector, writeToken))
           }
         }
-    } else Future.successful(Left(s"Stopping sending for ${hook.hook_id} after ${configuration.pokeUs.maxRetriesForHook.toString} retries."))
+    } else {
+      val message = s"Stopping sending for ${hook.hook_id} after ${configuration.pokeUs.maxRetriesForHook.toString} retries."
+      Logger.error(message)
+      throw new Exception(message)
+    }
   }
 
   private def markAsNotified(writeToken: Token, selector: String) = {
     warpClient.exec(_root_.models.warpscripts.query_module.Query(writeToken.token, selector, "").markAsNotified.toString)
+    // stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get)) // this comes useless if we consider that meta attribute of last notified is here during the fetch condition
   }
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
