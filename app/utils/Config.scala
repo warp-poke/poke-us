@@ -21,7 +21,8 @@ case class PokeUsConfig(
   fetchReadTokenInterval: Int,
   fetchWriteTokenInterval: Int,
   fetchAlertsInterval: Int,
-  maxRetriesForHook: Int
+  maxRetriesForHook: Int,
+  seriesToWatch: Seq[String]
 )
 
 @Singleton
@@ -42,7 +43,8 @@ class Config @Inject() (val configuration: Configuration) {
     fetchReadTokenInterval = getInt("pokeus.fetchReadTokenInterval"),
     fetchWriteTokenInterval = getInt("pokeus.fetchWriteTokenInterval"),
     fetchAlertsInterval = getInt("pokeus.fetchAlertsInterval"),
-    maxRetriesForHook = getInt("pokeus.maxRetriesForHook")
+    maxRetriesForHook = getInt("pokeus.maxRetriesForHook"),
+    seriesToWatch = configuration.get[Seq[String]]("pokeus.seriesToWatch")
   )
 
   private def getInt(path: String): Int = configuration.get[Int](path)

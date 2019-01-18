@@ -66,9 +66,7 @@ class AlertAgent @Inject() (
   }
 
   private def processAlerts(readToken: Token, writeToken: Token) = {
-    val seriesToProcess = List("~alert.http.status{}")
-
-    seriesToProcess.map { series =>
+    configuration.pokeUs.seriesToWatch.map { series =>
       val fetchAlerts = List(
         Checks.last(
           token = readToken.token,
@@ -88,7 +86,7 @@ class AlertAgent @Inject() (
       ).mkString("")
 
       Logger.debug(s"""
-        Fetch using with $fetchAlerts with:
+        Fetch series: "$series" using with $fetchAlerts with:
           - readToken: ${readToken.toString};
           - writeToken: ${writeToken.toString}.
       """)
