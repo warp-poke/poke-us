@@ -105,7 +105,7 @@ class AlertAgent @Inject() (
             getUserHooks(ownerId).map { either =>
               either match {
                 case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
-                case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(series, writeToken))
+                case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(gts.toSelector, writeToken))
               }
             }
           }}
