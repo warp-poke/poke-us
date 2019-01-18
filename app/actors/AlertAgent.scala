@@ -59,59 +59,57 @@ class AlertAgent @Inject() (
 
   def receive = {
     case Tick => stateAgent ! StateAgent.GetState
-    case State(None, None, None) => Logger.error(TokensUndefined.toString)
-    case State(Some(readToken), None, None) => Logger.error(WriteTokenUndefined.toString)
-    case State(None, Some(writeToken), None) => Logger.error(ReadTokenUndefined.toString)
-    case State(Some(readToken), Some(writeToken), None) => processAlerts(readToken, writeToken, LocalDateTime.now.minusMinutes(50000))
-    case State(Some(readToken), Some(writeToken), Some(lastAlertDate)) => processAlerts(readToken, writeToken, lastAlertDate)
+    case State(None, None) => Logger.error(TokensUndefined.toString)
+    case State(Some(readToken), None) => Logger.error(WriteTokenUndefined.toString)
+    case State(None, Some(writeToken)) => Logger.error(ReadTokenUndefined.toString)
+    case State(Some(readToken), Some(writeToken)) => processAlerts(readToken, writeToken)
   }
 
-  private def processAlerts(readToken: Token, writeToken: Token, lastAlertDate: LocalDateTime) = {
-    Logger.debug(s"""
-      Fetching from ${FetchRange(lastAlertDate, LocalDateTime.now).toString} with
-        - readToken: ${readToken.toString};
-        - writeToken: ${writeToken.toString}.
-    """)
+  private def processAlerts(readToken: Token, writeToken: Token) = {
+    val seriesToProcess = List("~alert.http.status{}")
 
-    val selector = "~alert.http.status{}"
-
-    warpClient.exec(
-      List(
+    seriesToProcess.map { series =>
+      val fetchAlerts = List(
         Checks.last(
           token = readToken.token,
-          selector = selector,
+          selector = series,
           duration = "15 m",
           value = "false",
           op = "eq",
           labels = Some("[ 'zone' ]")),
         Checks.deltaMapper(
           token = readToken.token,
-          selector = selector,
+          selector = series,
           duration = "15 m",
           range = 5,
           value = "2",
           op = "ge",
           labels = Some("[ 'zone' ]"))
       ).mkString("")
-    ).map { gtsList =>
-      gtsList.map { gts =>
-        val alertsToEmit = gts.points.map { alertPoint =>
-          Alert(
-            ownerId = UUID.fromString(gts.labels("owner_id")),
-            date = tsToLocalDateTime(alertPoint.ts.get),
-            message = s"${gts.classname} - ${gts.labels.toString}"
-          )
-        }.toList
 
-        // for each (ownerId, ownedAlerts), send alerts
-        alertsToEmit.groupBy(_.ownerId).map { case (ownerId, ownedAlerts) => {
-          getUserHooks(ownerId).map { either =>
-            either match { 
-              case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
-              case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(selector, writeToken))
+      Logger.debug(s"""
+        Fetch using with $fetchAlerts with:
+          - readToken: ${readToken.toString};
+          - writeToken: ${writeToken.toString}.
+      """)
+
+      warpClient.exec(fetchAlerts).map { gtsList =>
+        gtsList.map { gts =>
+          gts.points.map { alertPoint =>
+            Alert(
+              ownerId = UUID.fromString(gts.labels("owner_id")),
+              date = tsToLocalDateTime(alertPoint.ts.get),
+              message = s"${gts.classname} - ${gts.labels.toString}"
+            )
+          }.toList.groupBy(_.ownerId).map { case (ownerId, ownedAlerts) => {
+            getUserHooks(ownerId).map { either =>
+              either match {
+                case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
+                case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(series, writeToken))
+              }
             }
-          }
-        }}
+          }}
+        }
       }
     }
   }
@@ -153,7 +151,6 @@ class AlertAgent @Inject() (
 
   private def markAsNotified(writeToken: Token, selector: String) = {
     warpClient.exec(_root_.models.warpscripts.query_module.Query(writeToken.token, selector, "").markAsNotified.toString)
-    // stateAgent ! StateAgent.SetLastAlertDate(tsToLocalDateTime(gts.mostRecentPoint.ts.get)) // this comes useless if we consider that meta attribute of last notified is here during the fetch condition
   }
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
