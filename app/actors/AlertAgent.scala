@@ -1,6 +1,6 @@
 package actors
 
-import java.time.{Instant, LocalDateTime, ZoneId}
+import java.time.{Instant, LocalDateTime, ZoneId, ZoneOffset}
 import java.util.UUID
 import javax.inject._
 
@@ -105,7 +105,7 @@ class AlertAgent @Inject() (
             getUserHooks(ownerId).map { either =>
               either match {
                 case Left(e) => Logger.error(e.toString) ; throw new Exception(e.toString)
-                case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(gts.toSelector, writeToken))
+                case Right(hooks) => hooks.map(hook => send(hook, ownedAlerts)(writeToken, gts.toSelector, gts.mostRecentPoint.ts.get))
               }
             }
           }}
@@ -126,7 +126,7 @@ class AlertAgent @Inject() (
       }
   }
 
-  def send(hook: Hook, alerts: List[Alert], nbRetries: Int = 0)(selector: String, writeToken: Token): Any = {
+  def send(hook: Hook, alerts: List[Alert], nbRetries: Int = 0)(writeToken: Token, selector: String, mostRecentDate: Long): Any = {
     if (nbRetries <= configuration.pokeUs.maxRetriesForHook) {
       wsClient
         .url(hook.webhook)
@@ -136,10 +136,10 @@ class AlertAgent @Inject() (
         }.mkString("\n")))
         .map { response =>
           if (response.status >= 200 && response.status <= 299) {
-            markAsNotified(writeToken, selector) // TODO add return to check response and retry if bad response
+            markAsNotified(writeToken, selector, mostRecentDate) // TODO add return to check response and retry if bad response
           } else {
             Logger.error(s"${response.status.toString} - ${response.body.toString}, let's retry in ${nbRetries * 1}s...")
-            actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds)(send(hook, alerts, nbRetries + 1)(selector, writeToken))
+            actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds)(send(hook, alerts, nbRetries + 1)(writeToken, selector, mostRecentDate))
           }
         }
     } else {
@@ -149,8 +149,15 @@ class AlertAgent @Inject() (
     }
   }
 
-  private def markAsNotified(writeToken: Token, selector: String) = {
-    warpClient.exec(_root_.models.warpscripts.query_module.Query(writeToken.token, selector, "").markAsNotified.toString)
+  private def markAsNotified(writeToken: Token, selector: String, mostRecentDate: Long) = {
+    val query = _root_.models.warpscripts.query_module.Query(writeToken.token, selector, "")
+
+    warpClient.exec(
+      List(
+        query.setLastEvalTime(mostRecentDate.toString),
+        query.markAsNotified
+      ).mkString("")
+    )
   }
 
   private def tsToLocalDateTime(ts: Long): LocalDateTime = {
@@ -159,4 +166,6 @@ class AlertAgent @Inject() (
       ZoneId.of("UTC")
     )
   }
+
+  private def localDateTimeToTS(localDateTime: LocalDateTime): Long = localDateTime.toInstant(ZoneOffset.ofTotalSeconds(0)).toEpochMilli
 }
