@@ -134,7 +134,7 @@ class AlertAgent @Inject() (
         }.mkString("\n")))
         .map { response =>
           if (response.status >= 200 && response.status <= 299) {
-            markAsNotified(writeToken, selector, mostRecentDate) // TODO add return to check response and retry if bad response
+            markAsNotified(writeToken, selector, mostRecentDate) // TODO add return to markAsNotified to check response and retry if bad response
           } else {
             Logger.error(s"${response.status.toString} - ${response.body.toString}, let's retry in ${nbRetries * 1}s...")
             actorSystem.scheduler.scheduleOnce(nbRetries * 1 seconds)(send(hook, alerts, nbRetries + 1)(writeToken, selector, mostRecentDate))
